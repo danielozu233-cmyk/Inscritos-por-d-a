@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function authorized() {
+      return request.auth != null &&
+        request.auth.token.email in [
+          'ccoyoy@upana.edu.gt',
+          'jmjuarez@upana.edu.gt',
+          'nozuna@upana.edu.gt'
+        ];
+    }
+    match /students/{recordId} {
+      allow read, create, update, delete: if authorized();
+    }
+  }
+}

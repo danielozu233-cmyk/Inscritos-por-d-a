@@ -331,19 +331,6 @@
             const filteredFaculties = facultyFilter === "ALL" ? faculties : [facultyFilter];
 
             const targetEndDate = `${currentSelectedMonth}-${String(daysInMonth).padStart(2, '0')}`;
-            const historicalUpToMonth = {};
-            Object.keys(FIXED_GOALS).forEach(fac => historicalUpToMonth[fac] = 0);
-            
-            allEnrollmentsCache.forEach(item => {
-                const dKey = parseDateString(item.Fecha_Inscripcion);
-                if (dKey && dKey <= targetEndDate) {
-                    const fac = normalizeFaculty(item.DescFacultad);
-                    if (historicalUpToMonth[fac] !== undefined) {
-                        historicalUpToMonth[fac]++;
-                    }
-                }
-            });
-
             let totalMonthEnrollments = 0;
             Object.keys(daysMap).forEach(dKey => {
                 filteredFaculties.forEach(fac => {
@@ -407,11 +394,13 @@
                     let dayTotalEst = 0;
                     let dayTotalMeta = 0;
                     let dayTotalPend = 0;
+                    let dayTotalInsDay = 0;
 
                     filteredFaculties.forEach(fac => {
                         const goal = FIXED_GOALS[fac];
-                        const estDay = daysMap[dayInfo.dateKey][fac];
+                        const estDayOnly = daysMap[dayInfo.dateKey][fac]; // Inscriptos del día
                         
+                        // Acumulado global hasta este día (Est.)
                         let historicalUntilThisDay = 0;
                         allEnrollmentsCache.forEach(item => {
                             const dK = parseDateString(item.Fecha_Inscripcion);
@@ -421,22 +410,24 @@
                                 }
                             }
                         });
+
                         const pend = Math.max(0, goal - historicalUntilThisDay);
-                        const pctDay = goal > 0 ? ((estDay / goal) * 100).toFixed(1) : "0.0";
+                        const pctDay = goal > 0 ? ((estDayOnly / goal) * 100).toFixed(1) : "0.0";
 
                         dayTotalMeta += goal;
-                        dayTotalEst += estDay;
+                        dayTotalEst += historicalUntilThisDay;
                         dayTotalPend += pend;
+                        dayTotalInsDay += estDayOnly;
 
                         const tr = document.createElement("tr");
                         tr.className = "border-b border-slate-200 hover:bg-amber-100 transition-colors duration-150";
                         tr.innerHTML = `
                             <td class="py-1.5 px-2 font-medium text-slate-800 truncate max-w-[100px]" title="${fac}">${fac}</td>
                             <td class="py-1.5 px-1 text-right text-slate-600">${goal.toLocaleString()}</td>
-                            <td class="py-1.5 px-1 text-right font-bold text-slate-900">${estDay}</td>
+                            <td class="py-1.5 px-1 text-right font-bold text-slate-900">${historicalUntilThisDay.toLocaleString()}</td>
                             <td class="py-1.5 px-1 text-right text-slate-600">${pend.toLocaleString()}</td>
                             <td class="py-1.5 px-1 text-right text-slate-500">${pctDay}%</td>
-                            <td class="py-1.5 px-1 text-right font-semibold text-blue-600">${estDay}</td>
+                            <td class="py-1.5 px-1 text-right font-semibold text-blue-600">${estDayOnly}</td>
                         `;
                         tbody.appendChild(tr);
                     });
@@ -444,15 +435,15 @@
                     table.appendChild(tbody);
 
                     const tfoot = document.createElement("tfoot");
-                    let dayTotalPct = dayTotalMeta > 0 ? ((dayTotalEst / dayTotalMeta) * 100).toFixed(1) : "0.0";
+                    let dayTotalPct = dayTotalMeta > 0 ? ((dayTotalInsDay / dayTotalMeta) * 100).toFixed(1) : "0.0";
                     tfoot.innerHTML = `
                         <tr class="bg-slate-800 text-white font-bold border-t-2 border-slate-900">
                             <td class="py-2 px-2">TOTAL</td>
                             <td class="py-2 px-1 text-right">${dayTotalMeta.toLocaleString()}</td>
-                            <td class="py-2 px-1 text-right">${dayTotalEst}</td>
+                            <td class="py-2 px-1 text-right">${dayTotalEst.toLocaleString()}</td>
                             <td class="py-2 px-1 text-right">${dayTotalPend.toLocaleString()}</td>
                             <td class="py-2 px-1 text-right">${dayTotalPct}%</td>
-                            <td class="py-2 px-1 text-right">${dayTotalEst}</td>
+                            <td class="py-2 px-1 text-right">${dayTotalInsDay}</td>
                         </tr>
                     `;
                     table.appendChild(tfoot);
@@ -508,7 +499,7 @@
                         <td class="py-2 px-2 text-right">${weekAggregateTotal}</td>
                     </tr>
                 `;
-                weekTable.appendChild(weekTfoot);
+                weekTfoot.appendChild(weekTfoot); // Corregido
                 weekTotalBox.appendChild(weekTable);
 
                 tablesFlex.appendChild(weekTotalBox);

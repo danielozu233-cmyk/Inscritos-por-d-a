@@ -1,5 +1,969 @@
-<!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#153b52"><title>Avance de admisiones</title><link rel="stylesheet" href="styles.css"><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script><script type="module" src="app.js"></script></head>
-<body><header><div class="brand"><h1>Avance de admisiones</h1><p>Resumen diario por facultad</p></div><div class="session-bar"><span id="signedEmail"></span><button id="logout" class="secondary">Cerrar sesión</button></div></header>
-<main><section class="controls"><label class="upload">Importar datos<input id="file" type="file" accept=".xlsx,.xls,.csv"></label><div class="month-tabs" id="months"></div><div class="date-nav"><button id="prev" aria-label="Mes anterior">←</button><input id="date" type="date"><button id="next" aria-label="Mes siguiente">→</button><button id="today">Mes actual</button></div><select id="facultyFilter"><option value="">Todas las facultades</option></select><button id="export" class="secondary">Descargar reporte</button></section>
-<section class="summary"><div><span>Inscritos del mes</span><strong id="dayTotal">0</strong></div><div><span>Facultades</span><strong id="facultyTotal">0</strong></div><div><span>Registros cargados</span><strong id="recordTotal">0</strong></div></section><section id="calendar" class="calendar"></section><div class="empty" id="empty">Inicia sesión para consultar el reporte.</div><footer>Reporte de admisiones · Resumen por facultad</footer></main></body></html>
+<!DOCTYPE html>
+<html lang="es" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avance de admisiones</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0284c7',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                            900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SheetJS (XLSX Parser & Exporter) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    
+    <style>
+        /* Custom Scrollbar for tables */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .table-container {
+            overflow-x: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 #f1f5f9;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen font-sans antialiased selection:bg-sky-500 selection:text-white">
+
+    <!-- APP CONTAINER -->
+    <div id="app" class="min-h-screen flex flex-col">
+        
+        <!-- TOP NAVBAR -->
+        <header id="main-header" class="hidden bg-white border-b border-slate-300 sticky top-0 z-40 shadow-sm">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="bg-sky-600 text-white p-2 rounded-lg font-bold text-xl shadow-sm">
+                        <i class="fa-solid fa-chart-line"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold tracking-tight text-slate-900">Avance de admisiones</h1>
+                        <p class="text-xs text-slate-500">Sistema de seguimiento y control de inscripciones</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-4">
+                    <button id="btn-open-import" class="inline-flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white px-3.5 py-2 rounded-lg text-sm font-medium transition shadow-sm hover:shadow">
+                        <i class="fa-solid fa-file-import"></i>
+                        <span>Importar datos</span>
+                    </button>
+
+                    <div class="h-6 w-px bg-slate-300"></div>
+
+                    <div class="flex items-center gap-3">
+                        <div class="text-right hidden sm:block">
+                            <span id="user-email" class="block text-sm font-semibold text-slate-700">cargando...</span>
+                            <span class="block text-xs text-emerald-600 font-medium"><i class="fa-solid fa-circle text-[8px] mr-1"></i>Autorizado</span>
+                        </div>
+                        <button id="btn-logout" title="Cerrar sesión" class="bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-600 p-2 rounded-lg transition border border-slate-300">
+                            <i class="fa-solid fa-right-from-bracket text-base"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- AUTH SCREEN -->
+        <div id="auth-screen" class="flex-1 flex items-center justify-center p-4 bg-slate-100">
+            <div class="max-w-md w-full bg-white border border-slate-300 rounded-2xl p-8 shadow-xl relative overflow-hidden">
+                <div class="absolute -top-10 -right-10 w-40 h-40 bg-sky-500/10 rounded-full blur-3xl"></div>
+                <div class="text-center mb-8 relative">
+                    <div class="inline-flex items-center justify-center w-16 h-16 bg-sky-50 text-sky-600 rounded-2xl mb-4 border border-sky-100 shadow-sm">
+                        <i class="fa-solid fa-shield-halved text-2xl"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-slate-900">Avance de admisiones</h2>
+                    <p class="text-sm text-slate-500 mt-1">Acceso restringido a usuarios autorizados</p>
+                </div>
+
+                <form id="login-form" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">Correo institucional</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                                <i class="fa-solid fa-envelope"></i>
+                            </span>
+                            <input type="email" id="login-email" required placeholder="usuario@upana.edu.gt" class="w-full bg-slate-50 border border-slate-300 rounded-lg pl-10 pr-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">Contraseña</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                                <i class="fa-solid fa-lock"></i>
+                            </span>
+                            <input type="password" id="login-password" required placeholder="••••••••" class="w-full bg-slate-50 border border-slate-300 rounded-lg pl-10 pr-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition">
+                        </div>
+                    </div>
+
+                    <div id="auth-error" class="hidden p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs space-y-1">
+                        <div class="font-bold flex items-center gap-1.5"><i class="fa-solid fa-circle-exclamation"></i> Error de acceso</div>
+                        <div id="auth-error-msg">Credenciales incorrectas o usuario no autorizado.</div>
+                    </div>
+
+                    <button type="submit" id="btn-login-submit" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-medium py-2.5 rounded-lg transition shadow-md hover:shadow-lg flex items-center justify-center gap-2">
+                        <span>Iniciar sesión</span>
+                        <i class="fa-solid fa-arrow-right text-xs"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- MAIN DASHBOARD CONTENT -->
+        <main id="dashboard-screen" class="hidden flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+            <!-- CONTROL BAR / FILTERS -->
+            <div class="bg-white border border-slate-300 rounded-xl p-4 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+                
+                <div class="flex flex-wrap items-center gap-3">
+                    <!-- Month Selector -->
+                    <div>
+                        <label class="block text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Periodo (Mes)</label>
+                        <div class="relative">
+                            <select id="month-filter" class="bg-slate-50 border border-slate-300 rounded-lg pl-3 pr-8 py-1.5 text-sm font-semibold text-slate-700 focus:outline-none focus:border-sky-500 appearance-none">
+                                <option value="">Cargando meses...</option>
+                            </select>
+                            <span class="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none text-slate-500">
+                                <i class="fa-solid fa-chevron-down text-xs"></i>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Faculty Filter -->
+                    <div>
+                        <label class="block text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Facultad</label>
+                        <div class="relative">
+                            <select id="faculty-filter" class="bg-slate-50 border border-slate-300 rounded-lg pl-3 pr-8 py-1.5 text-sm font-semibold text-slate-700 focus:outline-none focus:border-sky-500 appearance-none">
+                                <option value="ALL">Todas las facultades</option>
+                            </select>
+                            <span class="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none text-slate-500">
+                                <i class="fa-solid fa-chevron-down text-xs"></i>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex items-center gap-2 self-end md:self-auto">
+                    <button id="btn-export-excel" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-2 shadow-sm">
+                        <i class="fa-solid fa-file-excel"></i>
+                        <span>Exportar a Excel</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- DASHBOARD SUMMARY CARDS -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white border border-slate-300 p-4 rounded-xl shadow-sm">
+                    <div class="text-xs font-bold text-slate-500 uppercase tracking-wider">Meta Global Total</div>
+                    <div id="stat-total-meta" class="text-2xl font-extrabold text-slate-900 mt-1">8,786</div>
+                    <div class="text-[11px] text-slate-400 mt-0.5">Suma de 12 facultades</div>
+                </div>
+                <div class="bg-white border border-slate-300 p-4 rounded-xl shadow-sm">
+                    <div class="text-xs font-bold text-slate-500 uppercase tracking-wider">Inscritos del Mes</div>
+                    <div id="stat-month-enrolled" class="text-2xl font-extrabold text-sky-600 mt-1">0</div>
+                    <div class="text-[11px] text-slate-400 mt-0.5">En el mes seleccionado</div>
+                </div>
+                <div class="bg-white border border-slate-300 p-4 rounded-xl shadow-sm">
+                    <div class="text-xs font-bold text-slate-500 uppercase tracking-wider">Acumulado Histórico</div>
+                    <div id="stat-global-enrolled" class="text-2xl font-extrabold text-emerald-600 mt-1">0</div>
+                    <div class="text-[11px] text-slate-400 mt-0.5">Hasta fin del mes activo</div>
+                </div>
+                <div class="bg-white border border-slate-300 p-4 rounded-xl shadow-sm">
+                    <div class="text-xs font-bold text-slate-500 uppercase tracking-wider">% Cumplimiento Meta</div>
+                    <div id="stat-meta-percentage" class="text-2xl font-extrabold text-amber-600 mt-1">0%</div>
+                    <div class="text-[11px] text-slate-400 mt-0.5">Avance acumulado global</div>
+                </div>
+            </div>
+
+            <!-- MAIN DATA CONTAINER (WEEKLY BLOCKS) -->
+            <div id="dashboard-data-container" class="space-y-8">
+                <!-- Dynamic Weekly Rows Will Be Rendered Here -->
+            </div>
+
+            <!-- EMPTY STATE -->
+            <div id="empty-state" class="hidden text-center py-16 bg-white border border-slate-300 rounded-2xl shadow-sm">
+                <div class="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                    <i class="fa-solid fa-folder-open"></i>
+                </div>
+                <h3 class="text-lg font-bold text-slate-700">No hay registros para este periodo</h3>
+                <p class="text-sm text-slate-400 max-w-sm mx-auto mt-1">Selecciona otro mes o importa un archivo Excel/CSV con los datos de admisiones.</p>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- IMPORT MODAL -->
+    <div id="import-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white border border-slate-300 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
+            <button id="btn-close-import" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-2">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+
+            <div class="flex items-center gap-3 mb-4">
+                <div class="bg-sky-50 text-sky-600 p-2.5 rounded-xl border border-sky-200 shadow-sm">
+                    <i class="fa-solid fa-file-excel text-xl"></i>
+                </div>
+                <div>
+                    <h3 class="text-lg font-bold text-slate-900">Importar registros de admisiones</h3>
+                    <p class="text-xs text-slate-500">Archivos .xlsx, .xls o .csv con estructura estándar</p>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                <div id="drop-zone" class="border-2 border-dashed border-slate-300 hover:border-sky-500 rounded-xl p-8 text-center bg-slate-50 cursor-pointer transition">
+                    <i class="fa-solid fa-cloud-arrow-up text-3xl text-slate-400 mb-2"></i>
+                    <p class="text-sm font-semibold text-slate-700">Haz clic o arrastra tu archivo Excel aquí</p>
+                    <p class="text-xs text-slate-400 mt-1">Archivos soportados: .xlsx, .xls, .csv</p>
+                    <input type="file" id="file-input" accept=".xlsx, .xls, .csv" class="hidden">
+                </div>
+
+                <div class="bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs text-slate-600 space-y-1">
+                    <p class="font-bold text-slate-700">Columnas requeridas:</p>
+                    <p class="text-[11px] leading-relaxed text-slate-500 font-mono">
+                        Periodo, Codigo, Nombre, Apellido, FechaNacimiento, Edad, Genero, DescFacultad, Region, DescCampus, Descripcion_Carrera, TipoEst_, Fecha_Inscripcion, Fecha_asignacion, Cohorte, CorreoInstitucional, CorreoPersonal, Celular, EstatusCursos, Periodicdad.
+                    </p>
+                </div>
+
+                <!-- IMPORT PROGRESS & STATUS -->
+                <div id="import-status" class="hidden space-y-2">
+                    <div class="flex justify-between text-xs font-semibold">
+                        <span id="import-status-text" class="text-sky-600">Procesando...</span>
+                        <span id="import-status-count" class="text-slate-500">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-300">
+                        <div id="import-progress-bar" class="bg-sky-600 h-full w-0 transition-all duration-200"></div>
+                    </div>
+                </div>
+
+                <div id="import-error-box" class="hidden p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 max-h-32 overflow-y-auto"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- FIREBASE MODULE & APPLICATION LOGIC -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { 
+            getAuth, 
+            signInWithEmailAndPassword, 
+            signOut, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { 
+            getFirestore, 
+            collection, 
+            doc, 
+            getDoc, 
+            getDocs, 
+            setDoc, 
+            writeBatch, 
+            query, 
+            where 
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // FIREBASE CONFIGURATION
+        const firebaseConfig = {
+            apiKey: "AIzaSyCKrf4w-Djjrj2wAjgvaRauADxfcQWp5Do",
+            authDomain: "tallerggalvez.firebaseapp.com",
+            projectId: "tallerggalvez",
+            storageBucket: "tallerggalvez.firebasestorage.app",
+            messagingSenderId: "760556347227",
+            appId: "1:760556347227:web:78f0fb1ff89cc37133447e",
+            measurementId: "G-EVT5M54BXN"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // AUTHORIZED ACCOUNTS
+        const AUTHORIZED_USERS = [
+            "ccoyoy@upana.edu.gt",
+            "jmjuarez@upana.edu.gt",
+            "nozuna@upana.edu.gt"
+        ];
+
+        // FIXED TARGET METAS & FACULTY MAPPING
+        const FACULTY_METAS = {
+            "Salud": 2108,
+            "Económicas": 1108,
+            "Jurídicas": 1036,
+            "Aplicadas": 550,
+            "Humanidades": 513,
+            "Educación": 970,
+            "Médicas": 751,
+            "Upana Virtual": 603,
+            "Odontología": 256,
+            "Comunicación": 210,
+            "Teología": 40,
+            "Arquitectura": 81
+        };
+
+        const REQUIRED_COLUMNS = [
+            "Periodo", "Codigo", "Nombre", "Apellido", "FechaNacimiento", "Edad", 
+            "Genero", "DescFacultad", "Region", "DescCampus", "Descripcion_Carrera", 
+            "TipoEst_", "Fecha_Inscripcion", "Fecha_asignacion", "Cohorte", 
+            "CorreoInstitucional", "CorreoPersonal", "Celular", "EstatusCursos", "Periodicdad"
+        ];
+
+        function mapFacultyName(rawName) {
+            if (!rawName) return "Otras";
+            const clean = String(rawName).trim().toLowerCase();
+            
+            if (clean.includes("salud")) return "Salud";
+            if (clean.includes("económ") || clean.includes("econom")) return "Económicas";
+            if (clean.includes("juríd") || clean.includes("jurid")) return "Jurídicas";
+            if (clean.includes("aplicad") || clean.includes("ingeniería") || clean.includes("ingenieria") || clean.includes("tecnolog")) return "Aplicadas";
+            if (clean.includes("humanid")) return "Humanidades";
+            if (clean.includes("educaci")) return "Educación";
+            if (clean.includes("médic") || clean.includes("medic")) return "Médicas";
+            if (clean.includes("virtual") || clean.includes("upana virtual")) return "Upana Virtual";
+            if (clean.includes("odontol")) return "Odontología";
+            if (clean.includes("comunicac")) return "Comunicación";
+            if (clean.includes("teolog") || clean.includes("teológ")) return "Teología";
+            if (clean.includes("arquitect")) return "Arquitectura";
+
+            return "Otras";
+        }
+
+        let currentUser = null;
+        let availableMonths = [];
+        let selectedMonth = "";
+        let rawMonthRecords = [];
+        let globalFacultyCumulativeBeforeMonth = {};
+        let currentSelectedFaculty = "ALL";
+
+        const authScreen = document.getElementById('auth-screen');
+        const dashboardScreen = document.getElementById('dashboard-screen');
+        const mainHeader = document.getElementById('main-header');
+        const userEmailSpan = document.getElementById('user-email');
+        const loginForm = document.getElementById('login-form');
+        const authError = document.getElementById('auth-error');
+        const authErrorMsg = document.getElementById('auth-error-msg');
+        const btnLogout = document.getElementById('btn-logout');
+        const btnOpenImport = document.getElementById('btn-open-import');
+        const btnCloseImport = document.getElementById('btn-close-import');
+        const importModal = document.getElementById('import-modal');
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const monthFilter = document.getElementById('month-filter');
+        const facultyFilter = document.getElementById('faculty-filter');
+        const dashboardContainer = document.getElementById('dashboard-data-container');
+        const emptyState = document.getElementById('empty-state');
+        const btnExportExcel = document.getElementById('btn-export-excel');
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initAuthListener();
+            setupEventListeners();
+            populateFacultyFilterOptions();
+        });
+
+        function initAuthListener() {
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    const email = user.email ? user.email.toLowerCase() : "";
+                    if (AUTHORIZED_USERS.includes(email)) {
+                        currentUser = user;
+                        userEmailSpan.textContent = user.email;
+                        authScreen.classList.add('hidden');
+                        mainHeader.classList.remove('hidden');
+                        dashboardScreen.classList.remove('hidden');
+                        await loadDashboardData();
+                    } else {
+                        await signOut(auth);
+                        showAuthError("Acceso denegado. La cuenta no está dentro de la lista de usuarios autorizados.");
+                    }
+                } else {
+                    currentUser = null;
+                    authScreen.classList.remove('hidden');
+                    mainHeader.classList.add('hidden');
+                    dashboardScreen.classList.add('hidden');
+                }
+            });
+        }
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            authError.classList.add('hidden');
+            const email = document.getElementById('login-email').value.trim().toLowerCase();
+            const password = document.getElementById('login-password').value;
+
+            if (!AUTHORIZED_USERS.includes(email)) {
+                showAuthError("Acceso denegado. Este correo no tiene autorización para ingresar.");
+                return;
+            }
+
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+            } catch (err) {
+                showAuthError("Error al iniciar sesión. Verifique sus credenciales.");
+            }
+        });
+
+        btnLogout.addEventListener('click', () => signOut(auth));
+
+        function showAuthError(msg) {
+            authErrorMsg.textContent = msg;
+            authError.classList.remove('hidden');
+        }
+
+        function populateFacultyFilterOptions() {
+            facultyFilter.innerHTML = `<option value="ALL">Todas las facultades</option>`;
+            Object.keys(FACULTY_METAS).forEach(fac => {
+                const opt = document.createElement('option');
+                opt.value = fac;
+                opt.textContent = fac;
+                facultyFilter.appendChild(opt);
+            });
+        }
+
+        function setupEventListeners() {
+            btnOpenImport.addEventListener('click', () => importModal.classList.remove('hidden'));
+            btnCloseImport.addEventListener('click', () => importModal.classList.add('hidden'));
+
+            dropZone.addEventListener('click', () => fileInput.click());
+            dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('border-sky-500'); });
+            dropZone.addEventListener('dragleave', () => dropZone.classList.remove('border-sky-500'));
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-sky-500');
+                if (e.dataTransfer.files.length) handleFileImport(e.dataTransfer.files[0]);
+            });
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length) handleFileImport(e.target.files[0]);
+            });
+
+            monthFilter.addEventListener('change', async (e) => {
+                selectedMonth = e.target.value;
+                await fetchAndRenderMonthData();
+            });
+
+            facultyFilter.addEventListener('change', (e) => {
+                currentSelectedFaculty = e.target.value;
+                renderDashboardView();
+            });
+
+            btnExportExcel.addEventListener('click', exportToExcel);
+        }
+
+        async function loadDashboardData() {
+            try {
+                const summariesSnap = await getDocs(collection(db, "monthly_summaries"));
+                availableMonths = [];
+                summariesSnap.forEach(docSnap => {
+                    availableMonths.push(docSnap.id);
+                });
+
+                availableMonths.sort().reverse();
+
+                monthFilter.innerHTML = "";
+                if (availableMonths.length === 0) {
+                    const opt = document.createElement('option');
+                    opt.value = "";
+                    opt.textContent = "Sin datos disponibles";
+                    monthFilter.appendChild(opt);
+                    emptyState.classList.remove('hidden');
+                    dashboardContainer.innerHTML = "";
+                    updateSummaryCards(0, 0);
+                    return;
+                }
+
+                emptyState.classList.add('hidden');
+                availableMonths.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m;
+                    const [year, monthNum] = m.split("-");
+                    const dateObj = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
+                    const monthName = dateObj.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+                    opt.textContent = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+                    monthFilter.appendChild(opt);
+                });
+
+                const now = new Date();
+                const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2, '0')}`;
+                selectedMonth = availableMonths.includes(currentMonthStr) ? currentMonthStr : availableMonths[0];
+                monthFilter.value = selectedMonth;
+
+                await fetchAndRenderMonthData();
+            } catch (err) {
+                console.error("Error al cargar lista de meses:", err);
+            }
+        }
+
+        async function fetchAndRenderMonthData() {
+            if (!selectedMonth) return;
+
+            try {
+                const recordsQuery = query(
+                    collection(db, "enrollments"),
+                    where("month_key", "==", selectedMonth)
+                );
+                const recordsSnap = await getDocs(recordsQuery);
+                rawMonthRecords = [];
+                recordsSnap.forEach(d => rawMonthRecords.data && rawMonthRecords.push(d.data()) || rawMonthRecords.push(d.data()));
+
+                globalFacultyCumulativeBeforeMonth = {};
+                Object.keys(FACULTY_METAS).forEach(f => globalFacultyCumulativeBeforeMonth[f] = 0);
+
+                const pastMonths = availableMonths.filter(m => m < selectedMonth);
+                for (const pm of pastMonths) {
+                    const sumDocRef = doc(db, "monthly_summaries", pm);
+                    const sumSnap = await getDoc(sumDocRef);
+                    if (sumSnap.exists()) {
+                        const data = sumSnap.data();
+                        if (data.facultyTotals) {
+                            Object.keys(data.facultyTotals).forEach(fac => {
+                                globalFacultyCumulativeBeforeMonth[fac] = (globalFacultyCumulativeBeforeMonth[fac] || 0) + (data.facultyTotals[fac] || 0);
+                            });
+                        }
+                    }
+                }
+
+                renderDashboardView();
+            } catch (err) {
+                console.error("Error al obtener registros del mes:", err);
+            }
+        }
+
+        function renderDashboardView() {
+            dashboardContainer.innerHTML = "";
+
+            if (!selectedMonth || rawMonthRecords.length === 0) {
+                emptyState.classList.remove('hidden');
+                updateSummaryCards(0, 0);
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+
+            const [yearStr, monthStr] = selectedMonth.split("-");
+            const year = parseInt(yearStr);
+            const month = parseInt(monthStr) - 1;
+
+            const recordsByDay = {};
+            rawMonthRecords.forEach(rec => {
+                const dayKey = rec.Fecha_Inscripcion_Clean;
+                if (!recordsByDay[dayKey]) recordsByDay[dayKey] = [];
+                recordsByDay[dayKey].push(rec);
+            });
+
+            const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
+            const weeks = [];
+            let currentWeek = [];
+
+            for (let d = 1; d <= totalDaysInMonth; d++) {
+                const dateObj = new Date(year, month, d);
+                const dayKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                
+                currentWeek.push({
+                    dayNumber: d,
+                    dateKey: dayKey,
+                    dateObj: dateObj,
+                    records: recordsByDay[dayKey] || []
+                });
+
+                // A week ends on Sunday (getDay() === 0) OR if it is the absolute last day of the month
+                const dayOfWeek = dateObj.getDay(); // 0 is Sunday, 1 is Monday...
+                if (dayOfWeek === 0 || d === totalDaysInMonth) {
+                    weeks.push([...currentWeek]);
+                    currentWeek = [];
+                }
+            }
+
+            const runningCumulativeMap = { ...globalFacultyCumulativeBeforeMonth };
+            let totalMonthEnrolledCount = 0;
+
+            const targetFaculties = currentSelectedFaculty === "ALL" 
+                ? Object.keys(FACULTY_METAS) 
+                : [currentSelectedFaculty];
+
+            weeks.forEach((weekDays, weekIdx) => {
+                const weekBlock = document.createElement('div');
+                weekBlock.className = "bg-white border border-slate-300 rounded-2xl p-5 shadow-sm space-y-4";
+
+                const weekHeader = document.createElement('div');
+                weekHeader.className = "flex items-center justify-between border-b border-slate-200 pb-3";
+                weekHeader.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="bg-sky-50 text-sky-700 font-bold px-3 py-1 rounded-lg border border-sky-200 text-xs uppercase tracking-wider shadow-sm">
+                            Semana ${weekIdx + 1}
+                        </span>
+                        <span class="text-xs text-slate-600 font-medium">
+                            ${weekDays[0].dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} - ${weekDays[weekDays.length - 1].dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                    </div>
+                `;
+                weekBlock.appendChild(weekHeader);
+
+                const tableScrollWrapper = document.createElement('div');
+                tableScrollWrapper.className = "table-container overflow-x-auto pb-2";
+
+                const table = document.createElement('table');
+                table.className = "w-full text-xs text-left border-collapse min-w-[800px]";
+
+                let theadHtml = `<thead class="bg-slate-100 text-slate-800 uppercase tracking-wider text-[11px] font-extrabold border-b-2 border-slate-300"><tr>`;
+                theadHtml += `<th class="p-3 border-r border-slate-300 sticky left-0 bg-slate-100 z-10 w-36 shadow-sm">Facultad</th>`;
+                theadHtml += `<th class="p-3 border-r border-slate-300 text-right w-20">Meta</th>`;
+
+                weekDays.forEach(wd => {
+                    const dayName = wd.dateObj.toLocaleDateString('es-ES', { weekday: 'short' });
+                    theadHtml += `
+                        <th class="p-2.5 border-r border-slate-300 text-center min-w-[145px] bg-slate-100">
+                            <div class="font-bold text-sky-800 uppercase text-xs">${dayName} ${wd.dayNumber}</div>
+                            <div class="text-[9px] text-slate-500 font-medium grid grid-cols-4 gap-0.5 mt-0.5">
+                                <span title="Estudiante">Est</span>
+                                <span title="Pendiente admin">Pend</span>
+                                <span title="% Meta diario">%Día</span>
+                                <span title="Inscritos del día">Ins</span>
+                            </div>
+                        </th>
+                    `;
+                });
+
+                theadHtml += `<th class="p-3 text-center bg-sky-100 text-sky-900 font-extrabold w-28">Total Semana</th>`;
+                theadHtml += `</tr></thead>`;
+                table.innerHTML = theadHtml;
+
+                const tbody = document.createElement('tbody');
+                tbody.className = "divide-y divide-slate-200 text-slate-700";
+
+                const weekFacultyTotals = {};
+                targetFaculties.forEach(f => weekFacultyTotals[f] = 0);
+
+                targetFaculties.forEach(fac => {
+                    const row = document.createElement('tr');
+                    row.className = "hover:bg-sky-100/90 transition-colors duration-150 group";
+
+                    const meta = FACULTY_METAS[fac] || 0;
+                    let rowHtml = `<td class="p-3 font-bold text-slate-900 border-r border-slate-300 sticky left-0 bg-white group-hover:bg-sky-100 transition-colors z-10 shadow-sm">${fac}</td>`;
+                    rowHtml += `<td class="p-3 text-right font-mono font-bold text-slate-700 border-r border-slate-300 bg-slate-50/50 group-hover:bg-sky-100/50">${meta.toLocaleString()}</td>`;
+
+                    let facWeekSum = 0;
+
+                    weekDays.forEach(wd => {
+                        const dayFacCount = wd.records.filter(r => r.Facultad_Mapped === fac).length;
+                        facWeekSum += dayFacCount;
+                        totalMonthEnrolledCount += dayFacCount;
+
+                        runningCumulativeMap[fac] = (runningCumulativeMap[fac] || 0) + dayFacCount;
+                        const globalCum = runningCumulativeMap[fac];
+                        const pendingAdm = Math.max(0, meta - globalCum);
+
+                        const pctDaily = meta > 0 ? ((dayFacCount / meta) * 100).toFixed(1) : "0.0";
+                        const pctColor = dayFacCount > 0 ? 'text-sky-700 font-bold' : 'text-slate-400';
+
+                        rowHtml += `
+                            <td class="p-2 border-r border-slate-300 text-center font-mono">
+                                <div class="grid grid-cols-4 gap-1 text-[11px] items-center">
+                                    <span class="text-slate-800 font-semibold" title="Estudiantes del día">${dayFacCount}</span>
+                                    <span class="text-rose-700 font-bold" title="Pendiente admisión">${pendingAdm}</span>
+                                    <span class="${pctColor}" title="% de Meta Diario">${pctDaily}%</span>
+                                    <span class="text-emerald-800 font-bold" title="Inscritos del día">${dayFacCount}</span>
+                                </div>
+                            </td>
+                        `;
+                    });
+
+                    weekFacultyTotals[fac] = facWeekSum;
+
+                    rowHtml += `<td class="p-3 text-center font-bold font-mono text-sky-800 bg-sky-50 group-hover:bg-sky-200/70 transition-colors">${facWeekSum}</td>`;
+                    row.innerHTML = rowHtml;
+                    tbody.appendChild(row);
+                });
+
+                const totalRow = document.createElement('tr');
+                totalRow.className = "bg-slate-200/90 font-bold text-slate-900 border-t-2 border-slate-400 hover:bg-slate-300 transition-colors";
+
+                let totalMetaSum = targetFaculties.reduce((sum, f) => sum + (FACULTY_METAS[f] || 0), 0);
+                let totalRowHtml = `<td class="p-3 border-r border-slate-300 sticky left-0 bg-slate-200 z-10 text-sky-900 uppercase font-extrabold shadow-sm">TOTAL</td>`;
+                totalRowHtml += `<td class="p-3 text-right font-mono border-r border-slate-300 text-slate-900 font-extrabold">${totalMetaSum.toLocaleString()}</td>`;
+
+                let grandWeekTotal = 0;
+
+                weekDays.forEach(wd => {
+                    let dayTotalEst = 0;
+                    targetFaculties.forEach(f => {
+                        dayTotalEst += wd.records.filter(r => r.Facultad_Mapped === f).length;
+                    });
+
+                    grandWeekTotal += dayTotalEst;
+
+                    totalRowHtml += `
+                        <td class="p-2 border-r border-slate-300 text-center font-mono bg-slate-100">
+                            <span class="text-sky-900 font-extrabold text-xs">${dayTotalEst} ins.</span>
+                        </td>
+                    `;
+                });
+
+                totalRowHtml += `<td class="p-3 text-center font-mono text-emerald-800 font-extrabold text-sm bg-sky-200/80">${grandWeekTotal}</td>`;
+                totalRow.innerHTML = totalRowHtml;
+                tbody.appendChild(totalRow);
+
+                table.appendChild(tbody);
+                tableScrollWrapper.appendChild(table);
+                weekBlock.appendChild(tableScrollWrapper);
+                dashboardContainer.appendChild(weekBlock);
+            });
+
+            let overallCum = 0;
+            let overallMeta = Object.values(FACULTY_METAS).reduce((a, b) => a + b, 0);
+
+            Object.keys(FACULTY_METAS).forEach(f => {
+                overallCum += (runningCumulativeMap[f] || 0);
+            });
+
+            updateSummaryCards(totalMonthEnrolledCount, overallCum, overallMeta);
+        }
+
+        function updateSummaryCards(monthEnrolled, globalEnrolled, totalMeta = 8786) {
+            document.getElementById('stat-total-meta').textContent = totalMeta.toLocaleString();
+            document.getElementById('stat-month-enrolled').textContent = monthEnrolled.toLocaleString();
+            document.getElementById('stat-global-enrolled').textContent = globalEnrolled.toLocaleString();
+
+            const pct = totalMeta > 0 ? ((globalEnrolled / totalMeta) * 100).toFixed(1) : 0;
+            document.getElementById('stat-meta-percentage').textContent = `${pct}%`;
+        }
+
+        async function handleFileImport(file) {
+            const statusBox = document.getElementById('import-status');
+            const statusText = document.getElementById('import-status-text');
+            const progressBar = document.getElementById('import-progress-bar');
+            const errorBox = document.getElementById('import-error-box');
+
+            statusBox.classList.remove('hidden');
+            errorBox.classList.add('hidden');
+            progressBar.style.width = '5%';
+            statusText.textContent = "Leyendo archivo Excel...";
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const json = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+                    if (json.length === 0) {
+                        throw new Error("El archivo no contiene registros.");
+                    }
+
+                    const firstRowKeys = Object.keys(json[0]).map(k => k.trim());
+                    const missingCols = REQUIRED_COLUMNS.filter(col => !firstRowKeys.includes(col));
+
+                    if (missingCols.length > 0) {
+                        throw new Error(`Faltan columnas requeridas en el archivo: ${missingCols.join(", ")}`);
+                    }
+
+                    statusText.textContent = "Validando y procesando filas...";
+                    progressBar.style.width = '25%';
+
+                    const newRecordsMapByMonth = {}; 
+                    let duplicateCount = 0;
+
+                    json.forEach((row) => {
+                        const codigo = String(row.Codigo || "").trim();
+                        const rawFechaInsc = row.Fecha_Inscripcion;
+                        let fechaObj = null;
+
+                        if (rawFechaInsc instanceof Date && !isNaN(rawFechaInsc)) {
+                            fechaObj = rawFechaInsc;
+                        } else if (typeof rawFechaInsc === 'string' && rawFechaInsc.trim() !== "") {
+                            fechaObj = new Date(rawFechaInsc);
+                        }
+
+                        if (!fechaObj || isNaN(fechaObj.getTime())) {
+                            fechaObj = new Date(); 
+                        }
+
+                        const year = fechaObj.getFullYear();
+                        const month = String(fechaObj.getMonth() + 1).padStart(2, '0');
+                        const day = String(fechaObj.getDate()).padStart(2, '0');
+                        const hours = String(fechaObj.getHours()).padStart(2, '0');
+                        const minutes = String(fechaObj.getMinutes()).padStart(2, '0');
+
+                        const fechaClean = `${year}-${month}-${day}`;
+                        const monthKey = `${year}-${month}`;
+                        const horaClean = `${hours}:${minutes}`;
+
+                        const rawFaculty = String(row.DescFacultad || "").trim();
+                        const facultyMapped = mapFacultyName(rawFaculty);
+
+                        const docId = `${codigo}_${fechaClean}_${hours}${minutes}`.replace(/[^a-zA-Z0-9_]/g, "");
+
+                        const cleanDoc = {
+                            Periodo: String(row.Periodo || ""),
+                            Codigo: codigo,
+                            Nombre: String(row.Nombre || ""),
+                            Apellido: String(row.Apellido || ""),
+                            FechaNacimiento: String(row.FechaNacimiento || ""),
+                            Edad: Number(row.Edad) || 0,
+                            Genero: String(row.Genero || ""),
+                            DescFacultad: rawFaculty,
+                            Facultad_Mapped: facultyMapped,
+                            Region: String(row.Region || ""),
+                            DescCampus: String(row.DescCampus || ""),
+                            Descripcion_Carrera: String(row.Descripcion_Carrera || ""),
+                            TipoEst_: String(row.TipoEst_ || ""),
+                            Fecha_Inscripcion_Clean: fechaClean,
+                            Fecha_Inscripcion_Hora: horaClean,
+                            month_key: monthKey,
+                            Fecha_asignacion: String(row.Fecha_asignacion || ""),
+                            Cohorte: String(row.Cohorte || ""),
+                            CorreoInstitucional: String(row.CorreoInstitucional || ""),
+                            CorreoPersonal: String(row.CorreoPersonal || ""),
+                            Celular: String(row.Celular || ""),
+                            EstatusCursos: String(row.EstatusCursos || ""),
+                            Periodicdad: String(row.Periodicdad || ""),
+                            id: docId
+                        };
+
+                        if (!newRecordsMapByMonth[monthKey]) newRecordsMapByMonth[monthKey] = [];
+                        newRecordsMapByMonth[monthKey].push(cleanDoc);
+                    });
+
+                    statusText.textContent = "Guardando en Firestore...";
+                    progressBar.style.width = '50%';
+
+                    let batch = writeBatch(db);
+                    let batchOpCount = 0;
+
+                    const monthlyTotalsDelta = {}; 
+
+                    for (const mKey of Object.keys(newRecordsMapByMonth)) {
+                        monthlyTotalsDelta[mKey] = {};
+                        Object.keys(FACULTY_METAS).forEach(f => monthlyTotalsDelta[mKey][f] = 0);
+
+                        for (const rec of newRecordsMapByMonth[mKey]) {
+                            const ref = doc(db, "enrollments", rec.id);
+                            
+                            const existingSnap = await getDoc(ref);
+                            if (!existingSnap.exists()) {
+                                batch.set(ref, rec);
+                                batchOpCount++;
+                                monthlyTotalsDelta[mKey][rec.Facultad_Mapped] = (monthlyTotalsDelta[mKey][rec.Facultad_Mapped] || 0) + 1;
+                            } else {
+                                duplicateCount++;
+                            }
+
+                            if (batchOpCount >= 400) {
+                                await batch.commit();
+                                batch = writeBatch(db);
+                                batchOpCount = 0;
+                            }
+                        }
+                    }
+
+                    if (batchOpCount > 0) {
+                        await batch.commit();
+                    }
+
+                    statusText.textContent = "Actualizando resúmenes por mes...";
+                    progressBar.style.width = '85%';
+
+                    for (const mKey of Object.keys(monthlyTotalsDelta)) {
+                        const sumDocRef = doc(db, "monthly_summaries", mKey);
+                        const existingSumSnap = await getDoc(sumDocRef);
+
+                        let currentFacTotals = {};
+                        if (existingSumSnap.exists()) {
+                            currentFacTotals = existingSumSnap.data().facultyTotals || {};
+                        }
+
+                        Object.keys(monthlyTotalsDelta[mKey]).forEach(fac => {
+                            const added = monthlyTotalsDelta[mKey][fac];
+                            currentFacTotals[fac] = (currentFacTotals[fac] || 0) + added;
+                        });
+
+                        await setDoc(sumDocRef, {
+                            month_key: mKey,
+                            facultyTotals: currentFacTotals,
+                            updatedAt: new Date().toISOString()
+                        }, { merge: true });
+                    }
+
+                    progressBar.style.width = '100%';
+                    statusText.textContent = "¡Importación exitosa!";
+
+                    setTimeout(async () => {
+                        importModal.classList.add('hidden');
+                        statusBox.classList.add('hidden');
+                        progressBar.style.width = '0%';
+                        fileInput.value = "";
+                        await loadDashboardData();
+                    }, 1200);
+
+                } catch (err) {
+                    console.error("Error al procesar archivo:", err);
+                    statusBox.classList.add('hidden');
+                    errorBox.textContent = err.message || "Error al procesar el archivo Excel/CSV.";
+                    errorBox.classList.remove('hidden');
+                }
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
+        function exportToExcel() {
+            if (!rawMonthRecords || rawMonthRecords.length === 0) {
+                alert("No hay datos para exportar en el periodo seleccionado.");
+                return;
+            }
+
+            const exportData = rawMonthRecords.map(r => ({
+                "Periodo": r.Periodo,
+                "Código": r.Codigo,
+                "Nombre": r.Nombre,
+                "Apellido": r.Apellido,
+                "Facultad Mapeada": r.Facultad_Mapped,
+                "Facultad Original": r.DescFacultad,
+                "Carrera": r.Descripcion_Carrera,
+                "Fecha Inscripción": r.Fecha_Inscripcion_Clean,
+                "Hora": r.Fecha_Inscripcion_Hora,
+                "Campus": r.DescCampus,
+                "Región": r.Region,
+                "Correo Inst.": r.CorreoInstitucional,
+                "Celular": r.Celular
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(exportData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Admisiones");
+
+            XLSX.writeFile(workbook, `Avance_Admisiones_${selectedMonth}.xlsx`);
+        }
+    </script>
+</body>
+</html>

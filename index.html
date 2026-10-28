@@ -604,11 +604,11 @@
                         return;
                     }
 
-                    showLoading("Guardando registros en Firebase...");
+                    showLoading("Guardando registros en Firebase (evitando duplicados)...");
                     const batchSize = 400;
                     let batch = writeBatch(db);
                     let batchCount = 0;
-                    let importedCount = 0;
+                    let processedCount = 0;
 
                     for (const row of jsonRows) {
                         const code = String(row.Codigo || "").trim();
@@ -645,7 +645,7 @@
 
                         batch.set(docRef, recordData, { merge: true });
                         batchCount++;
-                        importedCount++;
+                        processedCount++;
 
                         if (batchCount >= batchSize) {
                             await batch.commit();
@@ -658,7 +658,7 @@
                         await batch.commit();
                     }
 
-                    showToast(`¡Importación exitosa! ${importedCount} registros procesados.`, "success");
+                    showToast(`¡Importación exitosa! ${processedCount} registros sincronizados (sin duplicados).`, "success");
                     e.target.value = "";
                     await loadDataAndInitialize();
                 } catch (err) {

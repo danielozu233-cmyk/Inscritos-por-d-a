@@ -65,6 +65,7 @@
             "médicas": "Médicas",
             "ciencias médicas": "Médicas",
             "upana virtual": "Upana Virtual",
+            "educación virtual": "Upana Virtual",
             "virtual": "Upana Virtual",
             "odontología": "Odontología",
             "comunicación": "Comunicación",
@@ -86,7 +87,7 @@
         let currentUser = null;
         let allEnrollmentsCache = [];
         let globalHistoricalCounts = {};
-        let currentSelectedMonth = ""; // YYYY-MM
+        let currentSelectedMonth = ""; 
         let facultyFilter = "ALL";
 
         window.addEventListener("DOMContentLoaded", () => {
@@ -101,6 +102,10 @@
             const excelFileInput = document.getElementById("excel-file-input");
             const importBtn = document.getElementById("import-btn");
             const exportBtn = document.getElementById("export-btn");
+            
+            const blendedBtn = document.getElementById("blended-btn");
+            const blendedModal = document.getElementById("blended-modal");
+            const closeBlendedBtn = document.getElementById("close-blended-btn");
 
             onAuthStateChanged(auth, async (user) => {
                 if (user) {
@@ -160,6 +165,21 @@
             importBtn.addEventListener("click", () => excelFileInput.click());
             excelFileInput.addEventListener("change", handleFileUpload);
             exportBtn.addEventListener("click", exportToExcel);
+
+            blendedBtn.addEventListener("click", () => {
+                renderBlendedTable();
+                blendedModal.classList.remove("hidden");
+            });
+
+            closeBlendedBtn.addEventListener("click", () => {
+                blendedModal.classList.add("hidden");
+            });
+
+            blendedModal.addEventListener("click", (e) => {
+                if (e.target === blendedModal) {
+                    blendedModal.classList.add("hidden");
+                }
+            });
         });
 
         async function loadDataAndInitialize() {
@@ -204,7 +224,7 @@
             allEnrollmentsCache.forEach(item => {
                 const dStr = parseDateString(item.Fecha_Inscripcion);
                 if (dStr) {
-                    const ym = dStr.substring(0, 7); // YYYY-MM
+                    const ym = dStr.substring(0, 7); 
                     monthsSet.add(ym);
                 }
             });
@@ -296,8 +316,8 @@
                 const dayStr = String(d).padStart(2, '0');
                 const dateKey = `${currentSelectedMonth}-${dayStr}`;
                 const dateObj = new Date(year, month, d);
-                let jsDay = dateObj.getDay(); // 0 = Dom, 1 = Lun, ... 6 = Sáb
-                let isoDay = jsDay === 0 ? 7 : jsDay; // 1 = Lun ... 7 = Dom
+                let jsDay = dateObj.getDay(); 
+                let isoDay = jsDay === 0 ? 7 : jsDay; 
 
                 currentWeek.push({ dateKey, dateObj, isoDay });
 
@@ -310,7 +330,6 @@
             const faculties = Object.keys(FIXED_GOALS);
             const filteredFaculties = facultyFilter === "ALL" ? faculties : [facultyFilter];
 
-            // Global accumulated up to current month end for Pend. adm. & % global
             const targetEndDate = `${currentSelectedMonth}-${String(daysInMonth).padStart(2, '0')}`;
             const historicalUpToMonth = {};
             Object.keys(FIXED_GOALS).forEach(fac => historicalUpToMonth[fac] = 0);
@@ -325,18 +344,19 @@
                 }
             });
 
-            // Render summary KPI
             let totalMonthEnrollments = 0;
             Object.keys(daysMap).forEach(dKey => {
                 filteredFaculties.forEach(fac => {
                     totalMonthEnrollments += daysMap[dKey][fac];
                 });
             });
+
             let totalGoalFiltered = filteredFaculties.reduce((acc, f) => acc + FIXED_GOALS[f], 0);
-            let totalCumulativeFiltered = filteredFaculties.reduce((acc, f) => acc + historicalUpToMonth[f], 0);
+            let totalCumulativeFiltered = filteredFaculties.reduce((acc, f) => acc + (globalHistoricalCounts[f] || 0), 0);
             let globalPct = totalGoalFiltered > 0 ? ((totalCumulativeFiltered / totalGoalFiltered) * 100).toFixed(1) : "0.0";
 
-            document.getElementById("kpi-month-total").textContent = totalMonthEnrollments;
+            document.getElementById("kpi-month-total").textContent = totalMonthEnrollments.toLocaleString();
+            document.getElementById("kpi-total-cumulative").textContent = `${totalCumulativeFiltered.toLocaleString()} / ${totalGoalFiltered.toLocaleString()}`;
             document.getElementById("kpi-global-progress").textContent = `${globalPct}%`;
 
             weeks.forEach((weekDays, wIndex) => {
@@ -392,7 +412,6 @@
                         const goal = FIXED_GOALS[fac];
                         const estDay = daysMap[dayInfo.dateKey][fac];
                         
-                        // Pendiente administrativo global acumulado hasta este día
                         let historicalUntilThisDay = 0;
                         allEnrollmentsCache.forEach(item => {
                             const dK = parseDateString(item.Fecha_Inscripcion);
@@ -442,7 +461,6 @@
                     tablesFlex.appendChild(dayTableBox);
                 });
 
-                // TOTAL SEMANA table at the end of the week row
                 const weekTotalBox = document.createElement("div");
                 weekTotalBox.className = "w-60 flex-shrink-0 bg-teal-900 text-white rounded-lg border border-teal-950 shadow-md overflow-hidden flex flex-col";
 
@@ -499,6 +517,48 @@
                 weekWrapper.appendChild(scrollContainer);
                 container.appendChild(weekWrapper);
             });
+        }
+
+        function renderBlendedTable() {
+            const tbody = document.getElementById("blended-tbody");
+            tbody.innerHTML = "";
+
+            let totalMeta = 0;
+            let totalInscritos = 0;
+            let totalPend = 0;
+
+            Object.keys(FIXED_GOALS).forEach(fac => {
+                const meta = FIXED_GOALS[fac];
+                const inscritos = globalHistoricalCounts[fac] || 0;
+                const pend = Math.max(0, meta - inscritos);
+                const pct = meta > 0 ? ((inscritos / meta) * 100).toFixed(1) : "0.0";
+
+                totalMeta += meta;
+                totalInscritos += inscritos;
+                totalPend += pend;
+
+                const tr = document.createElement("tr");
+                tr.className = "border-b border-slate-200 hover:bg-slate-50 transition-colors";
+                tr.innerHTML = `
+                    <td class="py-2.5 px-4 font-semibold text-slate-800">${fac}</td>
+                    <td class="py-2.5 px-4 text-right text-slate-600">${meta.toLocaleString()}</td>
+                    <td class="py-2.5 px-4 text-right font-bold text-slate-900">${inscritos.toLocaleString()}</td>
+                    <td class="py-2.5 px-4 text-right text-slate-600">${pend.toLocaleString()}</td>
+                    <td class="py-2.5 px-4 text-right font-semibold text-emerald-600">${pct}%</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            const totalPct = totalMeta > 0 ? ((totalInscritos / totalMeta) * 100).toFixed(1) : "0.0";
+            document.getElementById("blended-tfoot").innerHTML = `
+                <tr class="bg-slate-800 text-white font-bold">
+                    <td class="py-3 px-4">TOTAL GENERAL</td>
+                    <td class="py-3 px-4 text-right">${totalMeta.toLocaleString()}</td>
+                    <td class="py-3 px-4 text-right">${totalInscritos.toLocaleString()}</td>
+                    <td class="py-3 px-4 text-right">${totalPend.toLocaleString()}</td>
+                    <td class="py-3 px-4 text-right">${totalPct}%</td>
+                </tr>
+            `;
         }
 
         function formatWeekRange(weekDays) {
@@ -701,6 +761,38 @@
         </div>
     </div>
 
+    <!-- Blended Modal (Ventana Flotante General) -->
+    <div id="blended-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col border border-slate-200 overflow-hidden">
+            <div class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+                <h3 class="font-bold text-lg">Resumen General Blended (Acumulado Histórico)</h3>
+                <button id="close-blended-btn" class="text-slate-300 hover:text-white font-bold text-xl">&times;</button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-1">
+                <table class="w-full text-left border-collapse text-sm">
+                    <thead>
+                        <tr class="bg-slate-100 text-slate-700 border-b border-slate-300">
+                            <th class="py-3 px-4 font-semibold">Facultad</th>
+                            <th class="py-3 px-4 font-semibold text-right">Meta Global</th>
+                            <th class="py-3 px-4 font-semibold text-right">Inscritos Totales</th>
+                            <th class="py-3 px-4 font-semibold text-right">Pendiente Admin.</th>
+                            <th class="py-3 px-4 font-semibold text-right">% Cumplimiento</th>
+                        </tr>
+                    </thead>
+                    <tbody id="blended-tbody">
+                        <!-- Generado dinámicamente -->
+                    </tbody>
+                    <tfoot id="blended-tfoot">
+                        <!-- Generado dinámicamente -->
+                    </tfoot>
+                </table>
+            </div>
+            <div class="bg-slate-50 px-6 py-3 border-t border-slate-200 text-right">
+                <button id="close-blended-btn-2" onclick="document.getElementById('blended-modal').classList.add('hidden')" class="bg-slate-800 hover:bg-slate-900 text-white px-5 py-2 rounded-lg text-sm font-semibold transition">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Main Application Container -->
     <div id="app-container" class="hidden flex-col min-h-screen">
         <!-- Top Navbar -->
@@ -709,7 +801,7 @@
                 <div class="flex items-center space-x-3">
                     <h1 class="text-lg font-bold tracking-tight">Avance de admisiones</h1>
                 </div>
-                <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-3">
                     <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" class="hidden">
                     <button id="import-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow transition flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
@@ -718,6 +810,10 @@
                     <button id="export-btn" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow transition flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                         Exportar Excel
+                    </button>
+                    <button id="blended-btn" class="bg-teal-700 hover:bg-teal-800 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow transition flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                        Ver Blended
                     </button>
                     <div class="h-6 w-px bg-slate-700"></div>
                     <div class="flex items-center space-x-3">
@@ -761,6 +857,11 @@
                     <div class="text-right">
                         <span class="block text-xs font-semibold text-slate-500 uppercase">Inscritos en el Mes</span>
                         <span id="kpi-month-total" class="text-xl font-bold text-slate-900">0</span>
+                    </div>
+                    <div class="h-8 w-px bg-slate-200"></div>
+                    <div class="text-right">
+                        <span class="block text-xs font-semibold text-slate-500 uppercase">Inscritos Totales</span>
+                        <span id="kpi-total-cumulative" class="text-xl font-bold text-slate-900">0 / 0</span>
                     </div>
                     <div class="h-8 w-px bg-slate-200"></div>
                     <div class="text-right">

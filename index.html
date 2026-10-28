@@ -330,7 +330,6 @@
             const faculties = Object.keys(FIXED_GOALS);
             const filteredFaculties = facultyFilter === "ALL" ? faculties : [facultyFilter];
 
-            const targetEndDate = `${currentSelectedMonth}-${String(daysInMonth).padStart(2, '0')}`;
             let totalMonthEnrollments = 0;
             Object.keys(daysMap).forEach(dKey => {
                 filteredFaculties.forEach(fac => {
@@ -398,9 +397,8 @@
 
                     filteredFaculties.forEach(fac => {
                         const goal = FIXED_GOALS[fac];
-                        const estDayOnly = daysMap[dayInfo.dateKey][fac]; // Inscriptos del día
+                        const estDayOnly = daysMap[dayInfo.dateKey][fac];
                         
-                        // Acumulado global hasta este día (Est.)
                         let historicalUntilThisDay = 0;
                         allEnrollmentsCache.forEach(item => {
                             const dK = parseDateString(item.Fecha_Inscripcion);
@@ -499,7 +497,7 @@
                         <td class="py-2 px-2 text-right">${weekAggregateTotal}</td>
                     </tr>
                 `;
-                weekTfoot.appendChild(weekTfoot); // Corregido
+                weekTable.appendChild(weekTfoot); // Corregido correctamente a weekTable
                 weekTotalBox.appendChild(weekTable);
 
                 tablesFlex.appendChild(weekTotalBox);

@@ -497,7 +497,7 @@
                         <td class="py-2 px-2 text-right">${weekAggregateTotal}</td>
                     </tr>
                 `;
-                weekTable.appendChild(weekTfoot); // Corregido correctamente a weekTable
+                weekTable.appendChild(weekTfoot);
                 weekTotalBox.appendChild(weekTable);
 
                 tablesFlex.appendChild(weekTotalBox);
@@ -526,16 +526,95 @@
                 totalInscritos += inscritos;
                 totalPend += pend;
 
+                // Fila principal de la facultad
                 const tr = document.createElement("tr");
-                tr.className = "border-b border-slate-200 hover:bg-slate-50 transition-colors";
+                tr.className = "border-b border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer select-none group";
                 tr.innerHTML = `
-                    <td class="py-2.5 px-4 font-semibold text-slate-800">${fac}</td>
-                    <td class="py-2.5 px-4 text-right text-slate-600">${meta.toLocaleString()}</td>
-                    <td class="py-2.5 px-4 text-right font-bold text-slate-900">${inscritos.toLocaleString()}</td>
-                    <td class="py-2.5 px-4 text-right text-slate-600">${pend.toLocaleString()}</td>
-                    <td class="py-2.5 px-4 text-right font-semibold text-emerald-600">${pct}%</td>
+                    <td class="py-3 px-4 font-semibold text-slate-800 flex items-center justify-between">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-transform duration-200 arrow-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                            ${fac}
+                        </span>
+                        <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-normal">Ver detalle</span>
+                    </td>
+                    <td class="py-3 px-4 text-right text-slate-600">${meta.toLocaleString()}</td>
+                    <td class="py-3 px-4 text-right font-bold text-slate-900">${inscritos.toLocaleString()}</td>
+                    <td class="py-3 px-4 text-right text-slate-600">${pend.toLocaleString()}</td>
+                    <td class="py-3 px-4 text-right font-semibold text-emerald-600">${pct}%</td>
                 `;
+
+                // Fila desplegable con el desglose de Carreras y Campus
+                const detailTr = document.createElement("tr");
+                detailTr.className = "hidden bg-slate-50/80 border-b border-slate-200";
+                
+                const detailTd = document.createElement("td");
+                detailTd.setAttribute("colspan", "5");
+                detailTd.className = "p-4 pl-10";
+
+                // Agrupar registros por Carrera y Campus para esta facultad
+                const careerCampusMap = {};
+                allEnrollmentsCache.forEach(item => {
+                    if (normalizeFaculty(item.DescFacultad) === fac) {
+                        const career = item.Descripcion_Carrera || "Carrera no especificada";
+                        const campus = item.DescCampus || "Campus no especificado";
+                        if (!careerCampusMap[career]) careerCampusMap[career] = {};
+                        if (!careerCampusMap[career][campus]) careerCampusMap[career][campus] = 0;
+                        careerCampusMap[career][campus]++;
+                    }
+                });
+
+                if (Object.keys(careerCampusMap).length === 0) {
+                    detailTd.innerHTML = `<p class="text-xs text-slate-500 italic">No hay estudiantes inscritos registrados para esta facultad.</p>`;
+                } else {
+                    let detailHtml = `
+                        <div class="space-y-3">
+                            <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Desglose por Carrera y Campus</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    `;
+
+                    for (const [career, campuses] of Object.entries(careerCampusMap)) {
+                        let totalCareerCount = Object.values(campuses).reduce((a, b) => a + b, 0);
+                        detailHtml += `
+                            <div class="bg-white p-3 rounded-lg border border-slate-200 shadow-xs">
+                                <div class="flex justify-between items-start mb-2">
+                                    <h4 class="text-xs font-bold text-slate-800 pr-2">${career}</h4>
+                                    <span class="bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded text-[10px] whitespace-nowrap">${totalCareerCount} inscritos</span>
+                                </div>
+                                <ul class="space-y-1 border-t border-slate-100 pt-2">
+                        `;
+                        for (const [campus, count] of Object.entries(campuses)) {
+                            detailHtml += `
+                                <li class="flex justify-between items-center text-xs text-slate-600">
+                                    <span class="truncate pr-2" title="${campus}">• ${campus}</span>
+                                    <span class="font-semibold text-slate-900">${count}</span>
+                                </li>
+                            `;
+                        }
+                        detailHtml += `</ul></div>`;
+                    }
+                    detailHtml += `</div></div>`;
+                    detailTd.innerHTML = detailHtml;
+                }
+
+                detailTr.appendChild(detailTd);
+
+                // Evento click para desplegar/contraer
+                tr.addEventListener("click", () => {
+                    const isHidden = detailTr.classList.contains("hidden");
+                    const arrow = tr.querySelector(".arrow-icon");
+                    if (isHidden) {
+                        detailTr.classList.remove("hidden");
+                        arrow.classList.add("rotate-90");
+                        tr.classList.add("bg-slate-50");
+                    } else {
+                        detailTr.classList.add("hidden");
+                        arrow.classList.remove("rotate-90");
+                        tr.classList.remove("bg-slate-50");
+                    }
+                });
+
                 tbody.appendChild(tr);
+                tbody.appendChild(detailTr);
             });
 
             const totalPct = totalMeta > 0 ? ((totalInscritos / totalMeta) * 100).toFixed(1) : "0.0";
@@ -750,11 +829,14 @@
         </div>
     </div>
 
-    <!-- Blended Modal (Ventana Flotante General) -->
+    <!-- Blended Modal (Ventana Flotante General con Desglose) -->
     <div id="blended-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col border border-slate-200 overflow-hidden">
             <div class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
-                <h3 class="font-bold text-lg">Resumen General Blended (Acumulado Histórico)</h3>
+                <div>
+                    <h3 class="font-bold text-lg">Resumen General Blended (Acumulado Histórico)</h3>
+                    <p class="text-xs text-slate-300 mt-0.5">Haz clic en cualquier facultad para ver su detalle por carrera y campus.</p>
+                </div>
                 <button id="close-blended-btn" class="text-slate-300 hover:text-white font-bold text-xl">&times;</button>
             </div>
             <div class="p-6 overflow-y-auto flex-1">
